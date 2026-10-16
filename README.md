@@ -34,9 +34,11 @@ streamlit run app.py            # web UI
 
 ## API
 
+All endpoints except `/` and `/health` need an `X-API-Key` header matching `APP_API_KEY` from your `.env`. In `/docs`, click **Authorize** and paste the key.
+
 | Method | Path | Purpose |
 |---|---|---|
-| GET | /health | liveness check |
+| GET | /health | liveness check (no key needed) |
 | POST | /upload | add a PDF or image to the index |
 | POST | /ask | `{"question": "...", "top_k": 4, "source": "file.pdf", "include_sources": false}` returns `answer` and the source file names; `source` limits the search to one file, `include_sources` adds the retrieved chunks |
 | GET | /documents | list uploaded files with chunk counts |
@@ -48,6 +50,6 @@ Quota errors from Gemini are retried with backoff and returned as HTTP 429.
 
 ## Limitations and next steps
 
-- Single local FAISS index, no authentication, no per-user separation.
+- Single local FAISS index, one shared API key (no per-user accounts or separation).
 - Retrieval quality not yet measured on a test set.
 - Planned: evaluation set, CI pipeline, cloud deployment.

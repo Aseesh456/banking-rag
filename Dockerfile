@@ -13,6 +13,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Run as a non-root user (required by Hugging Face Spaces, good practice everywhere).
+# The app needs to write the FAISS index and download models, so give it a home and ownership.
+RUN useradd -m -u 1000 user && chown -R user:user /app
+USER user
+ENV HOME=/home/user
+
 EXPOSE 8000
 
 # The Gemini key is NOT baked into the image; pass it at run time with --env-file
