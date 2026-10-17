@@ -3,6 +3,7 @@
 Usage:
     python evaluate.py --docs eval_docs --questions eval_set.json --k 4
     python evaluate.py --docs eval_docs --questions eval_set.json --chunk-size 300   # try another chunk size
+    python evaluate.py --questions eval_set.json --k 4 --rerank --candidates 20   # with re-ranking
     python evaluate.py --docs eval_docs --questions eval_set.json --answers   # also grade Gemini's answers
 
 eval_set.json is a list of {"question": "...", "keywords": ["word1", "word2"]}.
@@ -32,9 +33,13 @@ def build_index(docs_dir):
     return total
 
 
+def _norm(s):
+    return " ".join(s.lower().split())  # lower-case and collapse line breaks / repeated spaces
+
+
 def contains_all(text, keywords):
-    t = text.lower()
-    return all(k.lower() in t for k in keywords)
+    t = _norm(text)
+    return all(_norm(k) in t for k in keywords)
 
 
 def main():
@@ -43,6 +48,8 @@ def main():
     p.add_argument("--questions", required=True)
     p.add_argument("--k", type=int, default=4)
     p.add_argument("--chunk-size", type=int, help="override chunk size when rebuilding the index (overlap = size/6)")
+    p.add_argument("--rerank", action="store_true", help="re-rank FAISS candidates with a cross-encoder")
+    p.add_argument("--candidates", type=int, default=20, help="how many FAISS candidates to re-rank")
     p.add_argument("--answers", action="store_true", help="also ask Gemini and check keywords in its answer")
     args = p.parse_args()
 
@@ -64,7 +71,7 @@ def main():
     hits, rr_sum, ans_ok, rows = 0, 0.0, 0, []
     for item in items:
         q, kws = item["question"], item["keywords"]
-        results = vector_store.search(q, k=args.k)
+        results = vector_store.search(q, k=args.k, rerank=args.rerank, candidates=args.candidates)
         rank = next((i + 1 for i, r in enumerate(results) if contains_all(r[0], kws)), None)
         hit = rank is not None
         hits += hit

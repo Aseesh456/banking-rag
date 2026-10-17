@@ -10,6 +10,7 @@ from vector_store import search, index_exists
 load_dotenv(dotenv_path=".env")
 
 MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+USE_RERANK = os.getenv("RERANK", "1") == "1"  # set RERANK=0 to skip the cross-encoder (faster, less accurate)
 
 PROMPT = """You are a banking assistant. Answer the question using ONLY the context below.
 
@@ -40,7 +41,7 @@ def answer_question(question, k=4, source=None):
     if not index_exists():
         return {"answer": "No documents uploaded yet. Upload a PDF or image first.", "sources": []}
 
-    hits = search(question, k=k, source=source)
+    hits = search(question, k=k, source=source, rerank=USE_RERANK)
     context = "\n\n---\n\n".join(text for text, _, _, _ in hits)
 
     prompt = PROMPT.format(context=context, question=question)

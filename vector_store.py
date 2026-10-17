@@ -7,6 +7,7 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 
 INDEX_DIR = "faiss_index"
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
 _embeddings = None
 
@@ -19,7 +20,19 @@ def get_embeddings():
     return _embeddings
 
 
-def chunk_text(text, chunk_size=600, overlap=100):
+_reranker = None
+
+
+def get_reranker():
+    """Load the cross-encoder re-ranker once and reuse it."""
+    global _reranker
+    if _reranker is None:
+        from sentence_transformers import CrossEncoder
+        _reranker = CrossEncoder(RERANK_MODEL, device="cpu")  # small model; CPU avoids GPU memory errors
+    return _reranker
+
+
+def chunk_text(text, chunk_size=1000, overlap=166):  # 1000 scored best in evaluate.py experiments
     splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=overlap)
     return splitter.split_text(text)
 
@@ -67,17 +80,26 @@ def list_sources():
     return counts
 
 
-def search(question, k=4, source=None):
-    """Return the k most similar chunks as (text, source, chunk_number, distance).
+def search(question, k=4, source=None, rerank=False, candidates=20):
+    """Return the k best chunks as (text, source, chunk_number, distance).
+
+    Stage 1: FAISS fetches `candidates` chunks by embedding similarity (fast, approximate).
+    Stage 2 (rerank=True): a cross-encoder reads the question together with each candidate
+    and re-orders them by relevance (slower, more accurate); the top k are returned.
     If source is given, only chunks from that file are searched."""
     if not index_exists():
         return []
     db = FAISS.load_local(INDEX_DIR, get_embeddings(), allow_dangerous_deserialization=True)
+    fetch = max(candidates, k) if rerank else k
     if source:
-        results = db.similarity_search_with_score(question, k=k, filter={"source": source}, fetch_k=max(50, k * 10))
+        results = db.similarity_search_with_score(question, k=fetch, filter={"source": source}, fetch_k=max(50, fetch * 10))
     else:
-        results = db.similarity_search_with_score(question, k=k)
-    return [
+        results = db.similarity_search_with_score(question, k=fetch)
+    hits = [
         (doc.page_content, doc.metadata.get("source"), doc.metadata.get("chunk"), float(score))
         for doc, score in results
     ]
+    if rerank and hits:
+        scores = get_reranker().predict([(question, h[0]) for h in hits])
+        hits = [h for _, h in sorted(zip(scores, hits), key=lambda p: p[0], reverse=True)]
+    return hits[:k]
